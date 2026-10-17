@@ -1,4 +1,4 @@
-# Turkish Media
+# Ezzetask
 
 Team task board for a software company (browser-only, local data): **assign tasks to team members**, filter by person or project, track status, deadlines, and attachments.
 

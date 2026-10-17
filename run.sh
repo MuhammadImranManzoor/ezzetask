@@ -18,7 +18,7 @@ PORT="${PORT:-5173}"
 URL="http://localhost:${PORT}"
 
 echo ""
-echo "  Turkish Media → ${URL}"
+echo "  Ezzetask → ${URL}"
 echo "  Press Ctrl+C to stop"
 echo ""
 

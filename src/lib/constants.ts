@@ -1,6 +1,6 @@
 import type { SidebarFilterId, TaskStatus } from '../types'
 
-export const APP_NAME = 'Turkish Media'
+export const APP_NAME = 'Ezzetask'
 export const APP_TAGLINE = 'Assign work · track by person'
 
 /** Muted dots for project folders — not loud fills */
