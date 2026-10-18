@@ -110,7 +110,7 @@ export function NewTaskModal({
 
       <div className="mb-6">
         <p className="app-label mb-2">Starting status</p>
-        <StatusPicker value={status} onChange={setStatus} size="large" showHints />
+        <StatusPicker value={status} onChange={setStatus} variant="inline" />
       </div>
 
       <div className="flex justify-end gap-2">

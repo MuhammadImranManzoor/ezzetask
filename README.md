@@ -1,49 +1,54 @@
 # Ezzetask
 
-Team task board for a software company (browser-only, local data): **assign tasks to team members**, filter by person or project, track status, deadlines, and attachments.
+Team task board for a software company: assign work to **frontend** and **backend** teammates, organize **multiple projects**, and let **admins** track how many tasks each person completed (last 7 days, 30 days, or all time).
 
-Data stays on your device in **IndexedDB** (no account or server required).
+**Production (cPanel):** PHP + MySQL API — no Node on the server. See [docs/DEPLOY_CPANEL.md](docs/DEPLOY_CPANEL.md).
+
+**Local dev:** PHP API + Vite React app. The legacy Node API in [`server/`](server/) is deprecated.
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 20+ (frontend build & dev server)
+- PHP 8.1+ with PDO MySQL
+- MySQL 5.7+ / MariaDB (local or cPanel)
 
 ## Run locally
 
-**One command (macOS opens the browser automatically):**
+**One command** (install [Node.js](https://nodejs.org) and [MySQL](https://dev.mysql.com/downloads/) first; on macOS: `brew install node php mysql` then `brew services start mysql`):
 
 ```bash
-cd ~/Documents/MacTaskPlanner
+chmod +x run.sh
 ./run.sh
 ```
 
-Or manually:
+`run.sh` creates the local MySQL database `ezzetask_dev`, imports the schema, seeds demo data, writes `php-api/config.php`, and starts PHP + Vite.
+
+Opens `http://localhost:5173` (Vite proxies `/api` → PHP on port 8080).
+
+Manual:
 
 ```bash
-npm install
+./scripts/prepare-deploy-public.sh
+php -S 127.0.0.1:8080 -t deploy/public deploy/public/router.php
+# other terminal:
 npm run dev
 ```
 
-Open the URL shown in the terminal (usually `http://localhost:5173`).
+The app loads as **admin** automatically (no login screen). Admins see **Insights** for team completion stats.
 
-Allow browser notifications if you use **Notify at deadline**.
-
-## Build for production
+## Build for cPanel
 
 ```bash
 npm run build
-npm run preview
 ```
 
-Deploy the `dist/` folder to any static host (Netlify, Vercel, GitHub Pages, etc.).
+Upload `dist/*` to `public_html/` and [`php-api/`](php-api/) to `public_html/api/` with `config.php` on the server. Full steps: [docs/DEPLOY_CPANEL.md](docs/DEPLOY_CPANEL.md).
 
 ## Features
 
-- **Projects** — create, edit, delete, color labels
-- **Tasks** — search, smart lists (Today, Overdue, status filters)
-- **Details** — description, deadline, images (drag-and-drop or upload)
-- **Team sidebar** — **All team tasks**, each **person’s queue** (open count), or **by project**
-- **My tasks** — set **I am** to your name, then use **My tasks** for your assignments
-- **Assign task** — admin flow: title, **required assignee**, project, status
-- **Themes** — light and dark mode (sidebar toggle; preference is saved)
-- **Shortcuts** — `⌘N` / `Ctrl+N` new task
+- **Direct open** — no login screen; admin session for your team workspace
+- **Projects** — create, edit, delete (admin)
+- **Team** — members tagged frontend / backend / other
+- **Tasks** — assignee required, status, deadline, browser notifications
+- **Admin analytics** — completed tasks per person, filter by project, 7d / 30d / all time
+- **Themes** — light and dark mode

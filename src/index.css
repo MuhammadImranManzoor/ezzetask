@@ -6,11 +6,11 @@
 
 /* Light — white canvas, graphite UI */
 html[data-theme='light'] {
-  --color-accent: #18181b;
-  --color-accent-hover: #27272a;
-  --color-accent-soft: #f4f4f5;
-  --color-accent-ring: #d4d4d8;
-  --color-surface: #ffffff;
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-soft: #eef2ff;
+  --color-accent-ring: #c7d2fe;
+  --color-surface: #f8fafc;
   --color-surface-raised: #ffffff;
   --color-surface-overlay: #ffffff;
   --color-border: #e5e5e5;
@@ -28,6 +28,7 @@ html[data-theme='light'] {
   --color-icon-active: #171717;
   --color-btn-shadow: rgb(0 0 0 / 0.08);
   --color-btn-text: #ffffff;
+  --color-canvas: #f1f5f9;
   --status-todo-bg: #eff6ff;
   --status-todo-text: #1d4ed8;
   --status-todo-border: #93c5fd;
@@ -46,11 +47,11 @@ html[data-theme='light'] {
 
 /* Dark — zinc surfaces, light primary buttons */
 html[data-theme='dark'] {
-  --color-accent: #fafafa;
-  --color-accent-hover: #e4e4e7;
-  --color-accent-soft: rgb(250 250 250 / 0.08);
-  --color-accent-ring: rgb(250 250 250 / 0.2);
-  --color-surface: #09090b;
+  --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-accent-soft: rgb(99 102 241 / 0.15);
+  --color-accent-ring: rgb(99 102 241 / 0.35);
+  --color-surface: #0c0c0f;
   --color-surface-raised: #18181b;
   --color-surface-overlay: #27272a;
   --color-border: rgb(255 255 255 / 0.1);
@@ -67,7 +68,8 @@ html[data-theme='dark'] {
   --color-icon: #a3a3a3;
   --color-icon-active: #fafafa;
   --color-btn-shadow: rgb(0 0 0 / 0.3);
-  --color-btn-text: #18181b;
+  --color-btn-text: #ffffff;
+  --color-canvas: #09090b;
   --status-todo-bg: rgb(59 130 246 / 0.15);
   --status-todo-text: #93c5fd;
   --status-todo-border: rgb(59 130 246 / 0.45);
@@ -90,7 +92,11 @@ html[data-theme='dark'] {
   }
 
   body {
-    @apply m-0 min-h-dvh bg-[var(--color-surface)] font-sans text-[var(--color-text)];
+    @apply m-0 h-dvh overflow-hidden bg-[var(--color-surface)] font-sans text-[var(--color-text)];
+  }
+
+  #root {
+    @apply h-full overflow-hidden;
   }
 
   * {
@@ -223,6 +229,24 @@ html[data-theme='dark'] {
     @apply border-2 bg-[var(--color-surface)] transition;
   }
 
+  .app-status-inline-selected.app-status-picker--todo {
+    background: var(--status-todo-bg);
+    color: var(--status-todo-text);
+    border-color: var(--status-todo-border);
+  }
+
+  .app-status-inline-selected.app-status-picker--progress {
+    background: var(--status-progress-bg);
+    color: var(--status-progress-text);
+    border-color: var(--status-progress-border);
+  }
+
+  .app-status-inline-selected.app-status-picker--done {
+    background: var(--status-done-bg);
+    color: var(--status-done-text);
+    border-color: var(--status-done-border);
+  }
+
   .app-status-picker--todo {
     border-color: var(--status-todo-border);
   }
@@ -286,6 +310,68 @@ html[data-theme='dark'] {
     border-color: var(--color-border);
     color: var(--color-text-muted);
     background: var(--color-surface);
+  }
+
+  .app-topbar {
+    background: var(--color-surface-raised);
+  }
+
+  .app-workspace-canvas {
+    background: var(--color-canvas);
+  }
+
+  .app-select {
+    @apply appearance-none rounded-lg border outline-none transition;
+    border-color: var(--color-border);
+    background: var(--color-input-bg);
+    color: var(--color-text);
+  }
+
+  .app-select:focus {
+    border-color: var(--color-accent-ring);
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
+  }
+
+  .app-toolbar-search {
+    background: var(--color-fill-subtle);
+    border: 1px solid var(--color-border);
+  }
+
+  .app-segment {
+    background: var(--color-segment-bg);
+  }
+
+  .app-segment-active {
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    box-shadow: 0 1px 2px var(--color-btn-shadow);
+  }
+
+  .app-brand-mark {
+    background: var(--color-accent);
+    color: var(--color-btn-text);
+  }
+
+  .app-surface-overlay {
+    background: var(--color-surface-overlay);
+  }
+
+  .app-chip {
+    @apply border;
+    border-color: var(--color-border);
+    color: var(--color-text-muted);
+    background: var(--color-surface-raised);
+  }
+
+  .app-chip-active {
+    background: var(--color-accent-soft);
+    color: var(--color-text);
+    box-shadow: inset 0 0 0 1px var(--color-accent-ring);
+  }
+
+  .app-row-selected {
+    background: var(--color-accent-soft);
+    box-shadow: inset 3px 0 0 var(--color-accent);
   }
 }
 

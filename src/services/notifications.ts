@@ -1,4 +1,3 @@
-import { db } from '../db'
 import type { TaskItem } from '../types'
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -47,24 +46,22 @@ export async function syncNotificationForTask(task: TaskItem) {
   const ms = task.deadline - Date.now()
   if (ms <= 0) return
 
-  const timeout = setTimeout(async () => {
-    const fresh = await db.tasks.get(task.id)
-    if (!fresh || fresh.status === 'done' || !fresh.notificationEnabled) return
-    new Notification(fresh.title.trim() || 'Task due', {
+  const timeout = setTimeout(() => {
+    if (task.status === 'done' || !task.notificationEnabled) return
+    new Notification(task.title.trim() || 'Task due', {
       body: 'Deadline reached',
-      tag: fresh.id,
+      tag: task.id,
     })
   }, Math.min(ms, 2_147_483_647))
 
   timers.set(task.id, timeout)
 }
 
-export async function resyncAllNotifications() {
+export async function resyncAllNotifications(tasks: TaskItem[]) {
   for (const id of timers.keys()) cancelTimer(id)
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') {
     return
   }
-  const tasks = await db.tasks.toArray()
   for (const task of tasks) {
     await syncNotificationForTask(task)
   }

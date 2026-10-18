@@ -1,4 +1,3 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Bell,
   BellOff,
@@ -12,6 +11,8 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { useData } from '../context/DataContext'
 import { db } from '../db'
 import { useTaskFieldDraft } from '../hooks/useTaskFieldDraft'
 import { projectColor } from '../lib/constants'
@@ -38,6 +39,7 @@ type Props = {
   composeTaskId: string | null
   onComposeDismiss: () => void
   onManageAssignees: () => void
+  onClose?: () => void
   onDeleted: () => void
 }
 
@@ -48,11 +50,13 @@ export function TaskDetailPanel({
   composeTaskId,
   onComposeDismiss,
   onManageAssignees,
+  onClose,
   onDeleted,
 }: Props) {
-  const task = useLiveQuery(
-    () => (taskId ? db.tasks.get(taskId) : undefined),
-    [taskId],
+  const { tasks, updateTask: patchTask, deleteTask: removeTaskApi } = useData()
+  const task = useMemo(
+    () => (taskId ? tasks.find((t) => t.id === taskId) : undefined),
+    [tasks, taskId],
   )
   const attachments = useLiveQuery(
     () =>
@@ -76,13 +80,13 @@ export function TaskDetailPanel({
   const persist = useCallback(
     async (patch: Partial<TaskItem>) => {
       if (!taskId) return
-      await db.tasks.update(taskId, { ...patch, updatedAt: Date.now() })
-      const fresh = await db.tasks.get(taskId)
-      if (fresh) await syncNotificationForTask(fresh)
+      await patchTask(taskId, patch)
+      const fresh = { ...task!, ...patch, updatedAt: Date.now() } as TaskItem
+      await syncNotificationForTask(fresh)
       setSavedFlash(true)
       window.setTimeout(() => setSavedFlash(false), 1200)
     },
-    [taskId],
+    [taskId, task, patchTask],
   )
 
   const {
@@ -156,15 +160,17 @@ export function TaskDetailPanel({
 
   if (!taskId || !task) {
     return (
-      <EmptyState
-        icon={<TextAlignStart className="h-6 w-6" />}
-        title="Select a task"
-        description={
-          project
-            ? 'Choose a task from the list or assign new work to a teammate.'
-            : 'Pick a project in the sidebar to get started.'
-        }
-      />
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <EmptyState
+          icon={<TextAlignStart className="h-6 w-6" />}
+          title="Select a task"
+          description={
+            project
+              ? 'Choose a task from the list or assign new work to a teammate.'
+              : 'Choose a project from the menu at the top.'
+          }
+        />
+      </div>
     )
   }
 
@@ -172,7 +178,7 @@ export function TaskDetailPanel({
     if (!taskId) return
     cancelNotification(taskId)
     await db.attachments.where('taskId').equals(taskId).delete()
-    await db.tasks.delete(taskId)
+    await removeTaskApi(taskId)
     setConfirmDelete(false)
     onComposeDismiss()
     onDeleted()
@@ -192,8 +198,19 @@ export function TaskDetailPanel({
     (attachments?.length ?? 0) > 0
 
   return (
-    <div className="scrollbar-thin flex h-full flex-col overflow-y-auto bg-[var(--color-surface)]">
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b app-border bg-[var(--color-surface)]/95 px-6 py-3 backdrop-blur-sm">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--color-surface-raised)]">
+      <div className="z-10 flex shrink-0 items-center justify-between border-b app-border bg-[var(--color-surface-raised)] px-4 py-3 lg:px-6">
+        <div className="flex items-center gap-2">
+          {onClose && (
+            <button
+              type="button"
+              className="rounded-lg p-2 app-text-muted app-bg-hover lg:hidden"
+              aria-label="Close task"
+              onClick={onClose}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
         <span className="text-xs app-text-muted">
           {savedFlash ? (
             <span className="font-medium app-text">Saved</span>
@@ -201,6 +218,7 @@ export function TaskDetailPanel({
             'Edits save automatically'
           )}
         </span>
+        </div>
         {isCompose && (
           <button
             type="button"
@@ -213,7 +231,8 @@ export function TaskDetailPanel({
         )}
       </div>
 
-      <div className="mx-auto w-full max-w-2xl p-6 md:p-8">
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+      <div className="w-full px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
         {isCompose && (
           <div className="mb-6 flex gap-3 rounded-xl border app-border app-accent-soft px-4 py-3 text-sm">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 app-icon-accent" />
@@ -258,7 +277,7 @@ export function TaskDetailPanel({
             onBlur={onTitleBlur}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Short, clear summary of the work"
-            className="app-input w-full text-xl font-semibold leading-snug"
+            className="app-input w-full py-3 text-xl font-semibold leading-snug sm:text-2xl"
           />
         </header>
 
@@ -270,18 +289,16 @@ export function TaskDetailPanel({
             <StatusPicker
               value={task.status}
               onChange={(status: TaskStatus) => void persist({ status })}
-              size="large"
-              showHints
             />
           </section>
 
           <section
-            className="rounded-xl border app-border bg-[var(--color-fill-subtle)] p-4"
+            className="rounded-xl border app-border bg-[var(--color-fill-subtle)] p-5 sm:p-6"
             aria-labelledby={`task-assignee-${taskId}`}
           >
             <h2
               id={`task-assignee-${taskId}`}
-              className="mb-3 flex items-center gap-2 text-sm font-semibold app-text"
+              className="mb-4 flex items-center gap-2 text-sm font-semibold app-text"
             >
               <User className="h-4 w-4 app-icon" />
               Assignee
@@ -291,6 +308,7 @@ export function TaskDetailPanel({
               value={task.assigneeId}
               onChange={(assigneeId) => void persist({ assigneeId })}
               onManageTeam={onManageAssignees}
+              spacious
             />
           </section>
 
@@ -316,8 +334,8 @@ export function TaskDetailPanel({
               onBlur={onDescriptionBlur}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Add details for the assignee…"
-              rows={isCompose ? 5 : 8}
-              className="app-input min-h-[120px] w-full resize-y px-3 py-3 text-sm leading-relaxed"
+              rows={isCompose ? 8 : 12}
+              className="app-input min-h-[200px] w-full resize-y px-4 py-3 text-sm leading-relaxed"
             />
           </section>
 
@@ -479,6 +497,7 @@ export function TaskDetailPanel({
             </GhostButton>
           </div>
         </div>
+      </div>
       </div>
 
       {attachmentError && (

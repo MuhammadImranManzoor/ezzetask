@@ -79,6 +79,7 @@ export class TaskPlannerDB extends Dexie {
             deadline: task.deadline,
             notificationEnabled: task.notificationEnabled,
             assigneeId,
+            completedAt: task.status === 'done' ? task.updatedAt : null,
           }
           await taskTable.put(updated)
         }

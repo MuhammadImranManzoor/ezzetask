@@ -1,20 +1,23 @@
 import {
+  BarChart3,
   Building2,
   FolderPlus,
   LayoutGrid,
+  LogOut,
   Pencil,
   Plus,
   Trash2,
-  User,
   Users,
 } from 'lucide-react'
 import { useState } from 'react'
-import { db } from '../db'
+import { useAuth } from '../context/AuthContext'
+import { useData } from '../context/DataContext'
 import { assigneeColor } from '../lib/assigneeColors'
 import { APP_NAME, APP_TAGLINE, projectColor } from '../lib/constants'
-import { countOpenTasksForAssignee, setMyAssigneeId } from '../lib/workspace'
+import { countOpenTasksForAssignee } from '../lib/workspace'
 import type { Assignee, BrowseMode, Project, TaskItem } from '../types'
 import { cancelNotification } from '../services/notifications'
+import { db } from '../db'
 import { ProjectModal } from './ProjectModal'
 import { ThemeToggle } from './ThemeToggle'
 import { cn, GhostButton } from './ui'
@@ -31,10 +34,11 @@ type Props = {
   onBrowseCompany: () => void
   onBrowseAssignee: (id: string) => void
   onBrowseProject: (id: string) => void
+  onBrowseAdmin: () => void
   onMyTasks: () => void
-  onMyProfileChange: (id: string | null) => void
   onProjectCreated: (id: string) => void
   onManageTeam: () => void
+  onLogout: () => void
 }
 
 export function Sidebar({
@@ -49,44 +53,37 @@ export function Sidebar({
   onBrowseCompany,
   onBrowseAssignee,
   onBrowseProject,
+  onBrowseAdmin,
   onMyTasks,
-  onMyProfileChange,
   onProjectCreated,
   onManageTeam,
+  onLogout,
 }: Props) {
+  const { isAdmin, user } = useAuth()
+  const { saveProject: persistProject, deleteProject } = useData()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Project | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
 
   async function saveProject(name: string, colorIndex: number) {
-    if (editing) {
-      await db.projects.update(editing.id, { name, colorIndex })
-    } else {
-      const sortOrder =
-        (await db.projects.orderBy('sortOrder').last())?.sortOrder ?? -1
-      const project: Project = {
-        id: crypto.randomUUID(),
-        name,
-        colorIndex,
-        createdAt: Date.now(),
-        sortOrder: sortOrder + 1,
-      }
-      await db.projects.add(project)
-      onProjectCreated(project.id)
-    }
+    const project = await persistProject({
+      id: editing?.id,
+      name,
+      colorIndex,
+    })
+    if (!editing) onProjectCreated(project.id)
     setModalOpen(false)
     setEditing(null)
   }
 
   async function confirmDelete() {
-    if (!deleteTarget) return
-    const projectTasks = await db.tasks.where('projectId').equals(deleteTarget.id).toArray()
+    if (!deleteTarget || !isAdmin) return
+    const projectTasks = tasks.filter((t) => t.projectId === deleteTarget.id)
     for (const task of projectTasks) {
       cancelNotification(task.id)
       await db.attachments.where('taskId').equals(task.id).delete()
-      await db.tasks.delete(task.id)
     }
-    await db.projects.delete(deleteTarget.id)
+    await deleteProject(deleteTarget.id)
     setDeleteTarget(null)
   }
 
@@ -100,21 +97,53 @@ export function Sidebar({
             <div className="app-brand-icon flex h-9 w-9 items-center justify-center rounded-xl">
               <Users className="h-4 w-4" />
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-bold tracking-tight app-text">{APP_NAME}</p>
-              <p className="text-xs app-text-muted">{APP_TAGLINE}</p>
+              <p className="truncate text-xs app-text-muted">{APP_TAGLINE}</p>
             </div>
           </div>
+          {user && (
+            <p className="mt-3 truncate text-xs app-text-muted">
+              Signed in as{' '}
+              <span className="font-medium app-text">{user.email}</span>
+              {isAdmin && (
+                <span className="ml-1 rounded bg-[var(--color-fill-active)] px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                  Admin
+                </span>
+              )}
+            </p>
+          )}
         </div>
 
         <div className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={onBrowseAdmin}
+              className={cn(
+                'mb-4 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition app-border',
+                browseMode === 'admin'
+                  ? 'app-accent-soft app-accent-ring'
+                  : 'app-bg-subtle app-bg-hover',
+              )}
+            >
+              <BarChart3 className="h-5 w-5 shrink-0 app-icon-accent" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold app-text">Team progress</span>
+                <span className="text-xs app-text-muted">
+                  Completed tasks · 7 / 30 days
+                </span>
+              </span>
+            </button>
+          )}
+
           {myProfile && (
             <button
               type="button"
               onClick={onMyTasks}
               className={cn(
                 'mb-3 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition app-border',
-                assigneeFilterId === myProfile.id
+                assigneeFilterId === myProfile.id && browseMode === 'assignee'
                   ? 'app-accent-soft app-accent-ring'
                   : 'app-bg-subtle app-bg-hover',
               )}
@@ -128,7 +157,8 @@ export function Sidebar({
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold app-text">My tasks</span>
                 <span className="text-xs app-text-muted">
-                  {countOpenTasksForAssignee(tasks, myProfile.id, assignees)} open assigned to you
+                  {countOpenTasksForAssignee(tasks, myProfile.id, assignees)} open
+                  assigned to you
                 </span>
               </span>
             </button>
@@ -156,7 +186,7 @@ export function Sidebar({
             </li>
             {assignees.map((person) => {
               const open = countOpenTasksForAssignee(tasks, person.id, assignees)
-              const active = assigneeFilterId === person.id
+              const active = assigneeFilterId === person.id && browseMode === 'assignee'
               return (
                 <li key={person.id}>
                   <button
@@ -181,28 +211,25 @@ export function Sidebar({
                 </li>
               )
             })}
-            {assignees.length === 0 && (
-              <li className="px-3 py-2 text-xs app-text-muted">
-                Add team members below to assign tasks.
-              </li>
-            )}
           </ul>
 
           <div className="mb-2 flex items-center justify-between px-2">
             <span className="text-xs font-semibold uppercase tracking-wider app-text-muted">
               Projects
             </span>
-            <button
-              type="button"
-              className="rounded-md p-1 app-text-muted transition app-bg-hover hover:text-[var(--color-text)]"
-              aria-label="Add project"
-              onClick={() => {
-                setEditing(null)
-                setModalOpen(true)
-              }}
-            >
-              <Plus className="h-4 w-4" />
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                className="rounded-md p-1 app-text-muted transition app-bg-hover hover:text-[var(--color-text)]"
+                aria-label="Add project"
+                onClick={() => {
+                  setEditing(null)
+                  setModalOpen(true)
+                }}
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           <ul className="space-y-0.5">
@@ -234,27 +261,29 @@ export function Sidebar({
                       <span className="text-xs app-text-muted">{openCount} open</span>
                     </span>
                   </button>
-                  <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 gap-0.5 group-hover:flex">
-                    <button
-                      type="button"
-                      className="rounded p-1 app-text-muted app-bg-hover hover:text-[var(--color-text)]"
-                      aria-label="Edit project"
-                      onClick={() => {
-                        setEditing(project)
-                        setModalOpen(true)
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded p-1 app-text-muted hover:bg-red-500/20 hover:text-red-500"
-                      aria-label="Delete project"
-                      onClick={() => setDeleteTarget(project)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  {isAdmin && (
+                    <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 gap-0.5 group-hover:flex">
+                      <button
+                        type="button"
+                        className="rounded p-1 app-text-muted app-bg-hover hover:text-[var(--color-text)]"
+                        aria-label="Edit project"
+                        onClick={() => {
+                          setEditing(project)
+                          setModalOpen(true)
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded p-1 app-text-muted hover:bg-red-500/20 hover:text-red-500"
+                        aria-label="Delete project"
+                        onClick={() => setDeleteTarget(project)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </li>
               )
             })}
@@ -262,42 +291,26 @@ export function Sidebar({
         </div>
 
         <div className="space-y-2 border-t app-border p-3">
-          <label className="block px-1">
-            <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium app-text-muted">
-              <User className="h-3.5 w-3.5" />
-              I am (for My tasks)
-            </span>
-            <select
-              value={myAssigneeId ?? ''}
-              onChange={(e) => {
-                const id = e.target.value || null
-                setMyAssigneeId(id)
-                onMyProfileChange(id)
-              }}
-              className="app-input w-full cursor-pointer py-2 text-xs"
-            >
-              <option value="">Select your name…</option>
-              {assignees.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <ThemeToggle />
           <GhostButton className="w-full justify-start gap-2" onClick={onManageTeam}>
             <Users className="h-4 w-4" />
             Manage team
           </GhostButton>
-          <GhostButton
-            className="w-full justify-start gap-2"
-            onClick={() => {
-              setEditing(null)
-              setModalOpen(true)
-            }}
-          >
-            <FolderPlus className="h-4 w-4" />
-            New project
+          {isAdmin && (
+            <GhostButton
+              className="w-full justify-start gap-2"
+              onClick={() => {
+                setEditing(null)
+                setModalOpen(true)
+              }}
+            >
+              <FolderPlus className="h-4 w-4" />
+              New project
+            </GhostButton>
+          )}
+          <GhostButton className="w-full justify-start gap-2" onClick={onLogout}>
+            <LogOut className="h-4 w-4" />
+            Sign out
           </GhostButton>
         </div>
       </aside>

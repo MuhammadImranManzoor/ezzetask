@@ -1,7 +1,7 @@
 import { UserPlus } from 'lucide-react'
 import type { Assignee } from '../types'
 import { assigneeColor } from '../lib/assigneeColors'
-import { GhostButton } from './ui'
+import { cn, GhostButton } from './ui'
 
 type Props = {
   assignees: Assignee[]
@@ -9,6 +9,7 @@ type Props = {
   onChange: (assigneeId: string | null) => void
   onManageTeam: () => void
   className?: string
+  spacious?: boolean
 }
 
 export function AssigneeSelect({
@@ -17,15 +18,20 @@ export function AssigneeSelect({
   onChange,
   onManageTeam,
   className,
+  spacious = false,
 }: Props) {
   const sorted = [...assignees].sort((a, b) => a.name.localeCompare(b.name))
+  const selected = value ? assignees.find((a) => a.id === value) : null
 
   return (
     <div className={className}>
       <select
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value || null)}
-        className="app-input w-full cursor-pointer"
+        className={cn(
+          'app-input w-full cursor-pointer',
+          spacious && 'py-3 text-base',
+        )}
       >
         <option value="">Unassigned</option>
         {sorted.map((person) => (
@@ -35,23 +41,27 @@ export function AssigneeSelect({
         ))}
       </select>
 
-      {value && (
-        <div className="app-assignee-badge mt-2 text-xs">
+      {selected && spacious && (
+        <div className="mt-3 flex items-center gap-3 rounded-lg border px-3 py-2.5 app-border app-surface-raised">
           <span
-            className="h-2.5 w-2.5 rounded-full"
-            style={{
-              backgroundColor: assigneeColor(
-                assignees.find((a) => a.id === value)?.colorIndex ?? 0,
-              ),
-            }}
-          />
-          {assignees.find((a) => a.id === value)?.name}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white"
+            style={{ backgroundColor: assigneeColor(selected.colorIndex) }}
+          >
+            {selected.name.charAt(0).toUpperCase()}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium app-text">{selected.name}</p>
+            <p className="text-xs capitalize app-text-muted">{selected.team}</p>
+          </div>
         </div>
       )}
 
       <GhostButton
         type="button"
-        className="mt-3 w-full justify-start gap-2 text-xs"
+        className={cn(
+          'justify-start gap-2',
+          spacious ? 'mt-4 w-full py-2.5 text-sm' : 'mt-3 w-full text-xs',
+        )}
         onClick={onManageTeam}
       >
         <UserPlus className="h-4 w-4" />

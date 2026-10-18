@@ -8,6 +8,14 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+server/node_modules
+server/data
+php-api/config.php
+deploy/cpanel.local.env
+deploy/upload-zips
+deploy/public/api
+deploy/public/index.html
+deploy/public/assets
 dist
 dist-ssr
 *.local
