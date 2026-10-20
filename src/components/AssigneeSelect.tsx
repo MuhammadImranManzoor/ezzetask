@@ -10,6 +10,7 @@ type Props = {
   onManageTeam: () => void
   className?: string
   spacious?: boolean
+  allowUnassigned?: boolean
 }
 
 export function AssigneeSelect({
@@ -19,6 +20,7 @@ export function AssigneeSelect({
   onManageTeam,
   className,
   spacious = false,
+  allowUnassigned = true,
 }: Props) {
   const sorted = [...assignees].sort((a, b) => a.name.localeCompare(b.name))
   const selected = value ? assignees.find((a) => a.id === value) : null
@@ -33,7 +35,13 @@ export function AssigneeSelect({
           spacious && 'py-3 text-base',
         )}
       >
-        <option value="">Unassigned</option>
+        {allowUnassigned ? (
+          <option value="">Unassigned</option>
+        ) : (
+          <option value="" disabled>
+            Select assignee
+          </option>
+        )}
         {sorted.map((person) => (
           <option key={person.id} value={person.id}>
             {person.name}

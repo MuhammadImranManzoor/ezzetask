@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Ezzetask-Token');
 header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
@@ -30,6 +30,7 @@ require __DIR__ . '/handlers/MembersHandler.php';
 require __DIR__ . '/handlers/ProjectsHandler.php';
 require __DIR__ . '/handlers/TasksHandler.php';
 require __DIR__ . '/handlers/AnalyticsHandler.php';
+require __DIR__ . '/handlers/AttachmentsHandler.php';
 
 set_exception_handler(static function (Throwable $e): void {
     if ($e instanceof PDOException) {

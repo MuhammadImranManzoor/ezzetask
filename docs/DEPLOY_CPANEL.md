@@ -106,6 +106,26 @@ Usually **`api/config.php` MySQL settings** or **database not seeded**.
 4. Visit **`https://yourdomain.com/api/seed.php`** once, then delete `seed.php`.
 5. Rebuild/re-upload only if you changed the frontend error text locally.
 
+## Upgrading an existing database (task images)
+
+If the site was deployed before **server-stored attachments**, run this once in phpMyAdmin on your database (skip if you re-import the full `schema.sql`):
+
+```sql
+CREATE TABLE IF NOT EXISTS task_attachments (
+  id CHAR(36) PRIMARY KEY,
+  task_id CHAR(36) NOT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(128) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  data LONGBLOB NOT NULL,
+  created_at BIGINT NOT NULL,
+  CONSTRAINT fk_attachments_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_attachments_task ON task_attachments(task_id);
+```
+
+Then upload a fresh **`ezzetask-api.zip`** and **`ezzetask-web.zip`**. Old images that lived only in the browser are uploaded automatically the first time you open each task (one-time migration).
+
 ## Local development (PHP + Vite)
 
 See root [README.md](../README.md). Uses `./run.sh` with PHP on port 8080 and Vite on 5173.

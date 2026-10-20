@@ -50,4 +50,17 @@ CREATE INDEX idx_tasks_assignee ON tasks(assignee_id);
 CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_completed ON tasks(completed_at);
 
+CREATE TABLE IF NOT EXISTS task_attachments (
+  id CHAR(36) PRIMARY KEY,
+  task_id CHAR(36) NOT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(128) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  data LONGBLOB NOT NULL,
+  created_at BIGINT NOT NULL,
+  CONSTRAINT fk_attachments_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX idx_attachments_task ON task_attachments(task_id);
+
 SET FOREIGN_KEY_CHECKS = 1;

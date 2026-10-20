@@ -40,12 +40,10 @@ export function NewTaskModal({
   useEffect(() => {
     if (!open) return
     setTitle('')
-    setAssigneeId(defaultAssigneeId)
+    setAssigneeId(defaultAssigneeId ?? assignees[0]?.id ?? null)
     setProjectId(selectedProjectId ?? projects[0]?.id ?? '')
     setStatus('todo')
-    const t = window.setTimeout(() => inputRef.current?.focus(), 50)
-    return () => window.clearTimeout(t)
-  }, [open, defaultAssigneeId, selectedProjectId, projects])
+  }, [open, defaultAssigneeId, selectedProjectId, projects, assignees])
 
   const trimmedTitle = title.trim()
   const canCreate =
@@ -67,6 +65,7 @@ export function NewTaskModal({
         Task title
         <input
           ref={inputRef}
+          data-testid="new-task-title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Implement login API"
@@ -115,7 +114,11 @@ export function NewTaskModal({
 
       <div className="flex justify-end gap-2">
         <GhostButton onClick={onClose}>Cancel</GhostButton>
-        <PrimaryButton disabled={!canCreate} onClick={submit}>
+        <PrimaryButton
+          data-testid="new-task-submit"
+          disabled={!canCreate}
+          onClick={submit}
+        >
           Assign task
         </PrimaryButton>
       </div>

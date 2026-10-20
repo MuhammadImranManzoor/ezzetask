@@ -109,10 +109,18 @@ final class TasksHandler
         $ts = self::applyStatusTimestamps($nextStatus, $prevCompleted);
 
         $title = array_key_exists('title', $body) ? trim((string) $body['title']) : $existing['title'];
+        if ($title === '') {
+            Response::error('Title is required', 400);
+            return;
+        }
         $desc = array_key_exists('taskDescription', $body)
             ? (string) $body['taskDescription']
             : $existing['task_description'];
         $assigneeId = array_key_exists('assigneeId', $body) ? $body['assigneeId'] : $existing['assignee_id'];
+        if (!$assigneeId) {
+            Response::error('Assignee is required', 400);
+            return;
+        }
         $deadline = array_key_exists('deadline', $body) ? $body['deadline'] : $existing['deadline'];
         $notif = array_key_exists('notificationEnabled', $body)
             ? ($body['notificationEnabled'] ? 1 : 0)

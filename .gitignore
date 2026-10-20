@@ -18,6 +18,9 @@ deploy/public/index.html
 deploy/public/assets
 dist
 dist-ssr
+test-results
+playwright-report
+playwright/.cache
 *.local
 
 # Editor directories and files
@@ -30,3 +33,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+php-api/config.example.php

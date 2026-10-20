@@ -68,6 +68,22 @@ switch ($resource) {
         break;
 
     case 'tasks':
+        $sub = $segments[2] ?? null;
+        $attachmentId = $segments[3] ?? null;
+        if ($id !== null && $sub === 'attachments') {
+            if ($method === 'GET' && $attachmentId === null) {
+                AttachmentsHandler::listForTask($id);
+            } elseif ($method === 'POST' && $attachmentId === null) {
+                AttachmentsHandler::upload($id);
+            } elseif ($method === 'DELETE' && $attachmentId !== null) {
+                AttachmentsHandler::delete($id, $attachmentId);
+            } elseif ($method === 'GET' && $attachmentId !== null && ($segments[4] ?? '') === 'file') {
+                AttachmentsHandler::file($id, $attachmentId);
+            } else {
+                Response::error('Not found', 404);
+            }
+            break;
+        }
         if ($method === 'GET' && $id === null) {
             TasksHandler::list();
         } elseif ($method === 'POST' && $id === null) {
@@ -76,6 +92,14 @@ switch ($resource) {
             TasksHandler::patch($id);
         } elseif ($method === 'DELETE' && $id !== null) {
             TasksHandler::delete($id);
+        } else {
+            Response::error('Not found', 404);
+        }
+        break;
+
+    case 'attachments':
+        if ($method === 'GET' && ($segments[1] ?? '') === 'counts') {
+            AttachmentsHandler::counts();
         } else {
             Response::error('Not found', 404);
         }

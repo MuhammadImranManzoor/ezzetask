@@ -11,22 +11,23 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useData } from '../context/DataContext'
-import { db } from '../db'
-import { useTaskFieldDraft } from '../hooks/useTaskFieldDraft'
+import { useTaskEdit } from '../context/TaskEditContext'
+import { useTaskAttachments } from '../hooks/useTaskAttachments'
+import { useTaskEditorForm } from '../hooks/useTaskEditorForm'
+import { useToast } from '../context/ToastContext'
 import { projectColor } from '../lib/constants'
 import { absolute } from '../lib/dateFormatting'
 import { AssigneeSelect } from './AssigneeSelect'
 import { StatusPicker } from './StatusPicker'
-import type { Assignee, Project, TaskAttachment, TaskItem, TaskStatus } from '../types'
+import type { Assignee, Project, TaskStatus } from '../types'
 import {
   cancelNotification,
   getNotificationSupport,
   requestNotificationPermission,
   syncNotificationForTask,
 } from '../services/notifications'
-import { cn, EmptyState, GhostButton } from './ui'
+import { cn, EmptyState, GhostButton, PrimaryButton } from './ui'
 
 function defaultDeadline(): number {
   return Date.now() + 60 * 60 * 1000
@@ -41,6 +42,7 @@ type Props = {
   onManageAssignees: () => void
   onClose?: () => void
   onDeleted: () => void
+  onAttachmentsChanged?: () => void
 }
 
 export function TaskDetailPanel({
@@ -52,64 +54,113 @@ export function TaskDetailPanel({
   onManageAssignees,
   onClose,
   onDeleted,
+  onAttachmentsChanged,
 }: Props) {
   const { tasks, updateTask: patchTask, deleteTask: removeTaskApi } = useData()
+  const { pushToast } = useToast()
+  const { setEditorState, registerDiscardHandler } = useTaskEdit()
   const task = useMemo(
     () => (taskId ? tasks.find((t) => t.id === taskId) : undefined),
     [tasks, taskId],
   )
-  const attachments = useLiveQuery(
-    () =>
-      taskId
-        ? db.attachments.where('taskId').equals(taskId).sortBy('sortOrder')
-        : [],
-    [taskId],
-  ) as TaskAttachment[] | undefined
+  const {
+    items: attachments,
+    addFiles,
+    remove: removeAttachment,
+  } = useTaskAttachments(taskId)
 
   const titleRef = useRef<HTMLInputElement>(null)
-  const [hasDeadline, setHasDeadline] = useState(false)
-  const [showExtras, setShowExtras] = useState(false)
+  const [showExtras, setShowExtras] = useState(true)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [notifPermission, setNotifPermission] = useState(getNotificationSupport())
   const [savedFlash, setSavedFlash] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const isCompose = taskId != null && taskId === composeTaskId
 
-  const persist = useCallback(
-    async (patch: Partial<TaskItem>) => {
-      if (!taskId) return
-      await patchTask(taskId, patch)
-      const fresh = { ...task!, ...patch, updatedAt: Date.now() } as TaskItem
-      await syncNotificationForTask(fresh)
-      setSavedFlash(true)
-      window.setTimeout(() => setSavedFlash(false), 1200)
-    },
-    [taskId, task, patchTask],
-  )
+  const { form, setForm, isDirty, canSave, patchFromForm, applySavedTask, discardEdits } =
+    useTaskEditorForm(task, taskId)
 
-  const {
-    draft,
-    setTitle,
-    setDescription,
-    onTitleFocus,
-    onDescriptionFocus,
-    onTitleBlur,
-    onDescriptionBlur,
-  } = useTaskFieldDraft(task, taskId, persist)
+  useEffect(() => {
+    setEditorState({
+      taskId,
+      isDirty,
+      draftTitle: form.title,
+    })
+  }, [taskId, isDirty, form.title, setEditorState])
+
+  useEffect(() => {
+    registerDiscardHandler(discardEdits)
+    return () => registerDiscardHandler(null)
+  }, [discardEdits, registerDiscardHandler])
+
+  useEffect(() => {
+    const onRefresh = () => {
+      if (!isDirty) pushToast('Tasks updated from the server.', 'info')
+    }
+    window.addEventListener('ezzetask:data-refreshed', onRefresh)
+    return () => window.removeEventListener('ezzetask:data-refreshed', onRefresh)
+  }, [isDirty, pushToast])
+
+  const handleSave = useCallback(async () => {
+    if (!taskId || !task || !canSave || saving) return
+    setSaving(true)
+    try {
+      if (
+        form.notificationEnabled &&
+        form.hasDeadline &&
+        notifPermission !== 'granted'
+      ) {
+        const p = await requestNotificationPermission()
+        setNotifPermission(p)
+      }
+      const saved = await patchTask(taskId, patchFromForm())
+      applySavedTask(saved)
+      await syncNotificationForTask(saved)
+      setSavedFlash(true)
+      window.setTimeout(() => setSavedFlash(false), 2000)
+    } catch (e) {
+      pushToast(e instanceof Error ? e.message : 'Could not save task')
+    } finally {
+      setSaving(false)
+    }
+  }, [
+    taskId,
+    task,
+    canSave,
+    saving,
+    form.notificationEnabled,
+    form.hasDeadline,
+    notifPermission,
+    patchTask,
+    patchFromForm,
+    applySavedTask,
+    pushToast,
+  ])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        void handleSave()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleSave])
 
   useEffect(() => {
     setNotifPermission(getNotificationSupport())
   }, [])
 
   useEffect(() => {
-    if (task) setHasDeadline(task.deadline != null)
-  }, [task?.id, task?.deadline])
+    setShowExtras(true)
+  }, [taskId])
 
   useEffect(() => {
     if (!isCompose || !task) return
-    setShowExtras(false)
     const t = window.setTimeout(() => titleRef.current?.focus(), 80)
     return () => window.clearTimeout(t)
   }, [isCompose, task?.id, task])
@@ -117,46 +168,15 @@ export function TaskDetailPanel({
   const importFiles = useCallback(
     async (files: FileList | File[]) => {
       if (!taskId || !task) return
-      const list = Array.from(files).filter((f) => f.type.startsWith('image/'))
-      if (list.length === 0) {
-        setAttachmentError('Please choose image files only.')
-        return
-      }
-      let nextOrder =
-        (attachments?.reduce((m, a) => Math.max(m, a.sortOrder), -1) ?? -1) + 1
       try {
-        for (const file of list) {
-          await db.attachments.add({
-            id: crypto.randomUUID(),
-            taskId,
-            fileName: file.name,
-            mimeType: file.type,
-            blob: file,
-            sortOrder: nextOrder++,
-          })
-        }
-        await persist({})
+        await addFiles(files)
+        onAttachmentsChanged?.()
       } catch (e) {
         setAttachmentError(e instanceof Error ? e.message : 'Could not add images.')
       }
     },
-    [attachments, persist, task, taskId],
+    [addFiles, onAttachmentsChanged, task, taskId],
   )
-
-  const previewUrls = useMemo(() => {
-    if (!attachments) return []
-    return attachments.map((a) => ({
-      id: a.id,
-      url: URL.createObjectURL(a.blob),
-      name: a.fileName,
-    }))
-  }, [attachments])
-
-  useEffect(() => {
-    return () => {
-      for (const p of previewUrls) URL.revokeObjectURL(p.url)
-    }
-  }, [previewUrls])
 
   if (!taskId || !task) {
     return (
@@ -177,25 +197,20 @@ export function TaskDetailPanel({
   async function deleteTask() {
     if (!taskId) return
     cancelNotification(taskId)
-    await db.attachments.where('taskId').equals(taskId).delete()
     await removeTaskApi(taskId)
+    onAttachmentsChanged?.()
     setConfirmDelete(false)
     onComposeDismiss()
     onDeleted()
   }
 
-  async function removeAttachment(id: string) {
-    await db.attachments.delete(id)
-    await persist({})
-  }
-
   const showNotifBanner =
-    hasDeadline && task.status !== 'done' && notifPermission === 'denied'
+    form.hasDeadline && form.status !== 'done' && notifPermission === 'denied'
 
   const hasExtrasContent =
-    Boolean(draft.taskDescription.trim()) ||
-    hasDeadline ||
-    (attachments?.length ?? 0) > 0
+    Boolean(form.taskDescription.trim()) ||
+    form.hasDeadline ||
+    attachments.length > 0
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--color-surface-raised)]">
@@ -211,13 +226,28 @@ export function TaskDetailPanel({
               <X className="h-5 w-5" />
             </button>
           )}
-        <span className="text-xs app-text-muted">
-          {savedFlash ? (
-            <span className="font-medium app-text">Saved</span>
-          ) : (
-            'Edits save automatically'
-          )}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs app-text-muted">
+            {savedFlash ? (
+              <span className="font-medium app-text">Saved</span>
+            ) : isDirty ? (
+              <span className="font-medium text-amber-700 dark:text-amber-300">
+                Unsaved changes
+              </span>
+            ) : (
+              'All changes saved'
+            )}
+          </span>
+          <PrimaryButton
+            type="button"
+            data-testid="task-save-button"
+            className="px-3 py-1.5 text-xs"
+            disabled={!canSave || saving}
+            onClick={() => void handleSave()}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </PrimaryButton>
+        </div>
         </div>
         {isCompose && (
           <button
@@ -238,8 +268,8 @@ export function TaskDetailPanel({
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 app-icon-accent" />
             <p className="app-text-muted">
               Set the <strong className="font-medium app-text">title</strong> and{' '}
-              <strong className="font-medium app-text">description</strong> separately below.
-              Each field saves on its own.
+              <strong className="font-medium app-text">description</strong>, then click{' '}
+              <strong className="font-medium app-text">Save</strong> (or ⌘S / Ctrl+S).
             </p>
           </div>
         )}
@@ -272,13 +302,16 @@ export function TaskDetailPanel({
             autoComplete="off"
             data-1p-ignore
             data-lpignore="true"
-            value={draft.title}
-            onFocus={onTitleFocus}
-            onBlur={onTitleBlur}
-            onChange={(e) => setTitle(e.target.value)}
+            value={form.title}
+            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
             placeholder="Short, clear summary of the work"
             className="app-input w-full py-3 text-xl font-semibold leading-snug sm:text-2xl"
           />
+          {isDirty && !form.title.trim() && (
+            <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+              Title is required before you can save.
+            </p>
+          )}
         </header>
 
         <div className="space-y-6">
@@ -287,8 +320,10 @@ export function TaskDetailPanel({
               Status
             </h2>
             <StatusPicker
-              value={task.status}
-              onChange={(status: TaskStatus) => void persist({ status })}
+              value={form.status}
+              onChange={(status: TaskStatus) =>
+                setForm((f) => ({ ...f, status }))
+              }
             />
           </section>
 
@@ -305,11 +340,17 @@ export function TaskDetailPanel({
             </h2>
             <AssigneeSelect
               assignees={assignees}
-              value={task.assigneeId}
-              onChange={(assigneeId) => void persist({ assigneeId })}
+              value={form.assigneeId}
+              onChange={(assigneeId) => setForm((f) => ({ ...f, assigneeId }))}
               onManageTeam={onManageAssignees}
               spacious
+              allowUnassigned={false}
             />
+            {isDirty && !form.assigneeId && (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                Choose an assignee before you can save.
+              </p>
+            )}
           </section>
 
           <section aria-labelledby={`task-desc-${taskId}`}>
@@ -329,10 +370,10 @@ export function TaskDetailPanel({
               autoComplete="off"
               data-1p-ignore
               data-lpignore="true"
-              value={draft.taskDescription}
-              onFocus={onDescriptionFocus}
-              onBlur={onDescriptionBlur}
-              onChange={(e) => setDescription(e.target.value)}
+              value={form.taskDescription}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, taskDescription: e.target.value }))
+              }
               placeholder="Add details for the assignee…"
               rows={isCompose ? 8 : 12}
               className="app-input min-h-[200px] w-full resize-y px-4 py-3 text-sm leading-relaxed"
@@ -368,43 +409,51 @@ export function TaskDetailPanel({
                     </span>
                     <input
                       type="checkbox"
-                      checked={hasDeadline}
+                      checked={form.hasDeadline}
                       onChange={(e) => {
                         const enabled = e.target.checked
-                        setHasDeadline(enabled)
-                        void persist({
-                          deadline: enabled ? (task.deadline ?? defaultDeadline()) : null,
-                        })
+                        setForm((f) => ({
+                          ...f,
+                          hasDeadline: enabled,
+                          deadline: enabled
+                            ? (f.deadline ?? task.deadline ?? defaultDeadline())
+                            : null,
+                        }))
                       }}
                       className="h-4 w-4 rounded accent-zinc-700"
                     />
                   </label>
 
-                  {hasDeadline && (
+                  {form.hasDeadline && (
                     <div className="mt-3 space-y-3">
                       <input
                         type="datetime-local"
-                        value={toLocalInputValue(task.deadline ?? defaultDeadline())}
+                        value={toLocalInputValue(
+                          form.deadline ?? task.deadline ?? defaultDeadline(),
+                        )}
                         onChange={(e) => {
                           const ms = new Date(e.target.value).getTime()
-                          if (!Number.isNaN(ms)) void persist({ deadline: ms })
+                          if (!Number.isNaN(ms)) {
+                            setForm((f) => ({ ...f, deadline: ms, hasDeadline: true }))
+                          }
                         }}
                         className="app-input w-full text-sm"
                       />
                       <p className="text-xs app-text-muted">
-                        {absolute(new Date(task.deadline ?? defaultDeadline()))}
+                        {absolute(
+                          new Date(form.deadline ?? task.deadline ?? defaultDeadline()),
+                        )}
                       </p>
                       <label className="flex cursor-pointer items-center justify-between gap-3 text-sm app-text">
                         <span>Notify when due</span>
                         <input
                           type="checkbox"
-                          checked={task.notificationEnabled}
-                          onChange={async (e) => {
-                            if (e.target.checked && notifPermission !== 'granted') {
-                              const p = await requestNotificationPermission()
-                              setNotifPermission(p)
-                            }
-                            void persist({ notificationEnabled: e.target.checked })
+                          checked={form.notificationEnabled}
+                          onChange={(e) => {
+                            setForm((f) => ({
+                              ...f,
+                              notificationEnabled: e.target.checked,
+                            }))
                           }}
                           className="h-4 w-4 rounded accent-zinc-700"
                         />
@@ -453,26 +502,30 @@ export function TaskDetailPanel({
                       dragOver ? { borderColor: 'var(--color-accent-ring)' } : undefined
                     }
                   >
-                    {!attachments?.length ? (
+                    {!attachments.length ? (
                       <p className="py-4 text-center text-xs app-text-muted">
-                        Drop images here
+                        Drop images here — stored on the server so they follow this task on any device.
                       </p>
                     ) : (
                       <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
-                        {previewUrls.map((p) => (
+                        {attachments.map((p) => (
                           <div
                             key={p.id}
                             className="group relative overflow-hidden rounded-lg ring-1 app-border"
                           >
                             <img
                               src={p.url}
-                              alt={p.name}
+                              alt={p.fileName}
                               className="aspect-square w-full object-cover"
                             />
                             <button
                               type="button"
                               className="absolute right-1 top-1 rounded-md bg-black/70 p-1 text-white opacity-0 transition group-hover:opacity-100"
-                              onClick={() => void removeAttachment(p.id)}
+                              onClick={() =>
+                                void removeAttachment(p.id).then(() =>
+                                  onAttachmentsChanged?.(),
+                                )
+                              }
                               aria-label="Remove image"
                             >
                               <Trash2 className="h-3 w-3" />

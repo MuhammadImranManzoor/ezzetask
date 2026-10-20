@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AdminDashboard } from './components/AdminDashboard'
 import { AppHeader } from './components/AppHeader'
 import { AssigneesModal } from './components/AssigneesModal'
@@ -8,13 +8,17 @@ import { ProjectsManageModal } from './components/ProjectsManageModal'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { TaskListPanel } from './components/TaskListPanel'
 import { cn, GhostButton } from './components/ui'
+import { ApiError } from './api/client'
 import { useAuth } from './context/AuthContext'
 import { useData } from './context/DataContext'
+import { useToast } from './context/ToastContext'
+import { useTaskEdit } from './context/TaskEditContext'
+import { useAttachmentCounts } from './hooks/useAttachmentCounts'
 import {
   cancelNotification,
   resyncAllNotifications,
 } from './services/notifications'
-import type { BrowseMode, Project, SidebarFilterId, TaskStatus } from './types'
+import type { BrowseMode, Project, SidebarFilterId } from './types'
 
 export default function App() {
   const { user, loading: authLoading, isAdmin } = useAuth()
@@ -28,8 +32,15 @@ export default function App() {
     saveProject,
     deleteProject,
   } = useData()
+  const { pushToast } = useToast()
+  const { state: editState, discardEdits } = useTaskEdit()
+  const { counts: attachmentCounts, reload: reloadAttachmentCounts } =
+    useAttachmentCounts()
 
   const myAssigneeId = user?.memberId ?? null
+
+  const taskErrorMessage = (e: unknown) =>
+    e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Could not save task'
 
   const [browseMode, setBrowseMode] = useState<BrowseMode>('project')
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -79,7 +90,9 @@ export default function App() {
     return map
   }, [tasks])
 
-  const attachmentCounts = useMemo(() => new Map<string, number>(), [])
+  const [discardPrompt, setDiscardPrompt] = useState<
+    { kind: 'task'; nextTaskId: string } | { kind: 'close' } | null
+  >(null)
 
   const assigneeById = useMemo(() => {
     return new Map(assignees.map((a) => [a.id, a]))
@@ -106,58 +119,88 @@ export default function App() {
     setNewTaskOpen(true)
   }, [projects, selectedProjectId])
 
-  const addTask = useCallback(
-    async (
-      title: string,
-      assigneeId: string | null,
-      status: TaskStatus = 'todo',
-      openCompose = true,
-    ) => {
-      const projectId = selectedProjectId ?? projects[0]?.id
-      if (!projectId || !title.trim() || !assigneeId) return
-      const task = await createTask({
-        projectId,
-        title: title.trim(),
-        taskDescription: '',
-        status,
-        deadline: null,
-        notificationEnabled: true,
-        assigneeId,
-      })
-      setNewTaskOpen(false)
-      setSelectedTaskId(task.id)
-      setComposeTaskId(openCompose ? task.id : null)
-    },
-    [projects, selectedProjectId, createTask],
-  )
-
   const resetListFilters = useCallback(() => {
     setSidebarFilter('all')
     setSearchText('')
   }, [])
 
-  const browseCompany = useCallback(() => {
-    setBrowseMode('company')
-    resetListFilters()
+  const pendingLeaveRef = useRef<(() => void) | null>(null)
+
+  const leaveTaskIfNeeded = useCallback(
+    (action: () => void) => {
+      if (editState.isDirty && selectedTaskId) {
+        setDiscardPrompt({ kind: 'close' })
+        pendingLeaveRef.current = action
+        return
+      }
+      action()
+    },
+    [editState.isDirty, selectedTaskId],
+  )
+
+  const selectTask = useCallback(
+    (id: string) => {
+      if (id === selectedTaskId) return
+      if (editState.isDirty && selectedTaskId) {
+        setDiscardPrompt({ kind: 'task', nextTaskId: id })
+        return
+      }
+      setSelectedTaskId(id)
+      setComposeTaskId(null)
+    },
+    [editState.isDirty, selectedTaskId],
+  )
+
+  const closeTaskPanel = useCallback(() => {
+    if (editState.isDirty && selectedTaskId) {
+      setDiscardPrompt({ kind: 'close' })
+      return
+    }
     setSelectedTaskId(null)
-  }, [resetListFilters])
+  }, [editState.isDirty, selectedTaskId])
+
+  const confirmDiscardEdits = useCallback(() => {
+    discardEdits()
+    const pending = pendingLeaveRef.current
+    pendingLeaveRef.current = null
+    if (discardPrompt?.kind === 'task') {
+      setSelectedTaskId(discardPrompt.nextTaskId)
+      setComposeTaskId(null)
+    } else if (discardPrompt?.kind === 'close') {
+      if (pending) pending()
+      else setSelectedTaskId(null)
+    }
+    setDiscardPrompt(null)
+  }, [discardEdits, discardPrompt])
+
+  const browseCompany = useCallback(() => {
+    leaveTaskIfNeeded(() => {
+      setBrowseMode('company')
+      resetListFilters()
+      setSelectedTaskId(null)
+    })
+  }, [leaveTaskIfNeeded, resetListFilters])
 
   const browseProject = useCallback(
     (id: string) => {
-      setBrowseMode('project')
-      setSelectedProjectId(id)
-      resetListFilters()
-      setSelectedTaskId(null)
+      leaveTaskIfNeeded(() => {
+        setBrowseMode('project')
+        setSelectedProjectId(id)
+        resetListFilters()
+        setSelectedTaskId(null)
+      })
     },
-    [resetListFilters],
+    [leaveTaskIfNeeded, resetListFilters],
   )
 
   const browseAdmin = useCallback(() => {
     if (!isAdmin) return
-    setBrowseMode('admin')
-    resetListFilters()
-    setSelectedTaskId(null)
-  }, [isAdmin, resetListFilters])
+    leaveTaskIfNeeded(() => {
+      setBrowseMode('admin')
+      resetListFilters()
+      setSelectedTaskId(null)
+    })
+  }, [isAdmin, leaveTaskIfNeeded, resetListFilters])
 
   const returnToTasks = useCallback(() => {
     if (selectedProjectId) browseProject(selectedProjectId)
@@ -165,22 +208,29 @@ export default function App() {
     else browseCompany()
   }, [selectedProjectId, projects, browseProject, browseCompany])
 
-  const setAssigneeFilter = useCallback((id: string | null) => {
-    setAssigneeFilterId(id)
-    if (id && browseMode === 'company') {
-      setBrowseMode('assignee')
-    }
-    resetListFilters()
-    setSelectedTaskId(null)
-  }, [browseMode, resetListFilters])
+  const setAssigneeFilter = useCallback(
+    (id: string | null) => {
+      leaveTaskIfNeeded(() => {
+        setAssigneeFilterId(id)
+        if (id && browseMode === 'company') {
+          setBrowseMode('assignee')
+        }
+        resetListFilters()
+        setSelectedTaskId(null)
+      })
+    },
+    [browseMode, leaveTaskIfNeeded, resetListFilters],
+  )
 
   const myTasks = useCallback(() => {
     if (!myAssigneeId) return
-    setAssigneeFilterId(myAssigneeId)
-    setBrowseMode('assignee')
-    resetListFilters()
-    setSelectedTaskId(null)
-  }, [myAssigneeId, resetListFilters])
+    leaveTaskIfNeeded(() => {
+      setAssigneeFilterId(myAssigneeId)
+      setBrowseMode('assignee')
+      resetListFilters()
+      setSelectedTaskId(null)
+    })
+  }, [myAssigneeId, leaveTaskIfNeeded, resetListFilters])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -188,13 +238,13 @@ export default function App() {
         e.preventDefault()
         openNewTaskModal()
       }
-      if (e.key === 'Escape' && selectedTaskId) {
-        setSelectedTaskId(null)
+      if (e.key === 'Escape' && selectedTaskId && !discardPrompt) {
+        closeTaskPanel()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [openNewTaskModal, selectedTaskId])
+  }, [openNewTaskModal, selectedTaskId, discardPrompt, closeTaskPanel])
 
   if (authLoading || !user) {
     if (!authLoading && !user) {
@@ -228,7 +278,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div className="flex h-dvh flex-col overflow-hidden" data-testid="workspace">
       {error && (
         <div className="border-b border-red-500/30 bg-red-500/10 px-4 py-2 text-center text-sm text-red-600 dark:text-red-400">
           {error}
@@ -287,16 +337,8 @@ export default function App() {
                 sidebarFilter={sidebarFilter}
                 searchText={searchText}
                 onFilterChange={setSidebarFilter}
-                onSelectTask={(id) => {
-                  setSelectedTaskId(id)
-                  setComposeTaskId(null)
-                }}
+                onSelectTask={selectTask}
                 onNewTask={openNewTaskModal}
-                onQuickAdd={(title) => {
-                  const assignee = assigneeFilterId ?? myAssigneeId
-                  if (assignee) void addTask(title, assignee, 'todo', true)
-                  else openNewTaskModal()
-                }}
               />
             </div>
 
@@ -322,11 +364,13 @@ export default function App() {
                 composeTaskId={composeTaskId}
                 onComposeDismiss={() => setComposeTaskId(null)}
                 onManageAssignees={() => setAssigneesOpen(true)}
-                onClose={() => setSelectedTaskId(null)}
+                onClose={closeTaskPanel}
                 onDeleted={() => {
                   setSelectedTaskId(null)
                   setComposeTaskId(null)
+                  void reloadAttachmentCounts()
                 }}
+                onAttachmentsChanged={() => void reloadAttachmentCounts()}
               />
             </aside>
           </div>
@@ -347,21 +391,28 @@ export default function App() {
         onCreate={(title, assigneeId, status, projectId) =>
           void (async () => {
             const pid = projectId ?? selectedProjectId ?? projects[0]?.id
-            if (!pid || !assigneeId) return
-            setSelectedProjectId(pid)
-            setBrowseMode('project')
-            const task = await createTask({
-              projectId: pid,
-              title: title.trim(),
-              taskDescription: '',
-              status,
-              deadline: null,
-              notificationEnabled: true,
-              assigneeId,
-            })
-            setNewTaskOpen(false)
-            setSelectedTaskId(task.id)
-            setComposeTaskId(task.id)
+            if (!pid || !assigneeId) {
+              pushToast('Project and assignee are required.', 'info')
+              return
+            }
+            try {
+              setSelectedProjectId(pid)
+              setBrowseMode('project')
+              const task = await createTask({
+                projectId: pid,
+                title: title.trim(),
+                taskDescription: '',
+                status,
+                deadline: null,
+                notificationEnabled: true,
+                assigneeId,
+              })
+              setNewTaskOpen(false)
+              setSelectedTaskId(task.id)
+              setComposeTaskId(task.id)
+            } catch (e) {
+              pushToast(taskErrorMessage(e))
+            }
           })()
         }
       />
@@ -408,6 +459,38 @@ export default function App() {
           })()
         }}
       />
+
+      {discardPrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          style={{ background: 'var(--color-backdrop)' }}
+        >
+          <div className="max-w-sm rounded-2xl border p-6 app-border bg-[var(--color-surface-overlay)]">
+            <h3 className="text-lg font-bold app-text">Discard unsaved changes?</h3>
+            <p className="mt-2 text-sm app-text-muted">
+              Your edits to this task have not been saved. You can go back and click Save, or
+              discard them.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <GhostButton
+                onClick={() => {
+                  pendingLeaveRef.current = null
+                  setDiscardPrompt(null)
+                }}
+              >
+                Keep editing
+              </GhostButton>
+              <button
+                type="button"
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+                onClick={() => confirmDiscardEdits()}
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteProjectTarget && (
         <div

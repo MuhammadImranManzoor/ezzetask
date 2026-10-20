@@ -183,7 +183,11 @@ export function AppHeader({
             </div>
           )}
 
-          <PrimaryButton className="px-3 py-2 text-sm" onClick={onNewTask}>
+          <PrimaryButton
+            className="px-3 py-2 text-sm"
+            data-testid="new-task-button"
+            onClick={onNewTask}
+          >
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">New task</span>
           </PrimaryButton>

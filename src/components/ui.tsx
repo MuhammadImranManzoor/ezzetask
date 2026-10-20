@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap'
 
 export function cn(...parts: Array<string | false | null | undefined>) {
   return clsx(parts)
@@ -65,6 +66,7 @@ export function Modal({
   onClose: () => void
   children: ReactNode
 }) {
+  const panelRef = useModalFocusTrap(open, onClose)
   if (!open) return null
   return (
     <div
@@ -75,6 +77,7 @@ export function Modal({
       }}
     >
       <div
+        ref={panelRef}
         className="w-full max-w-md rounded-2xl border bg-[var(--color-surface-overlay)] p-6 shadow-xl app-border"
         role="dialog"
         aria-modal="true"

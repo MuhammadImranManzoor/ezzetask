@@ -12,6 +12,7 @@ import { isOverdue, isToday, relative } from '../lib/dateFormatting'
 import { assigneeColor } from '../lib/assigneeColors'
 import { buildAssigneeNameMap } from '../lib/assigneeMatch'
 import { visibleTasks } from '../lib/taskViews'
+import { useTaskEdit } from '../context/TaskEditContext'
 import { useMemo, type CSSProperties } from 'react'
 import type {
   Assignee,
@@ -21,7 +22,6 @@ import type {
   TaskItem,
   TaskStatus,
 } from '../types'
-import { TaskQuickAdd } from './TaskQuickAdd'
 import { cn, EmptyState, PrimaryButton } from './ui'
 
 function StatusChip({ status }: { status: TaskStatus }) {
@@ -51,7 +51,6 @@ type Props = {
   onFilterChange: (filter: SidebarFilterId) => void
   onSelectTask: (id: string) => void
   onNewTask: () => void
-  onQuickAdd: (title: string) => void
 }
 
 export function TaskListPanel({
@@ -68,8 +67,8 @@ export function TaskListPanel({
   onFilterChange,
   onSelectTask,
   onNewTask,
-  onQuickAdd,
 }: Props) {
+  const { state: editState, isDirtyForTask } = useTaskEdit()
   const nameToId = useMemo(() => buildAssigneeNameMap([...assigneeById.values()]), [assigneeById])
 
   const scopeTasks = visibleTasks(
@@ -148,16 +147,6 @@ export function TaskListPanel({
         </div>
       </div>
 
-      {browseMode === 'project' && project && (
-        <div className="shrink-0 px-4 pb-3 lg:px-8">
-          <TaskQuickAdd
-            disabled={!canAddTask}
-            onAdd={onQuickAdd}
-            onOpenFullForm={onNewTask}
-          />
-        </div>
-      )}
-
       {!canAddTask && browseMode === 'project' ? (
         <div className="flex min-h-0 flex-1 overflow-y-auto">
           <EmptyState
@@ -206,6 +195,13 @@ export function TaskListPanel({
                   task.assigneeId != null
                     ? assigneeById.get(task.assigneeId)
                     : undefined
+                const listTitle =
+                  editState.taskId === task.id &&
+                  editState.isDirty &&
+                  editState.draftTitle.trim()
+                    ? editState.draftTitle
+                    : task.title.trim() || 'Untitled task'
+                const rowUnsaved = isDirtyForTask(task.id)
                 let deadlineStyle: CSSProperties | undefined
                 if (task.deadline && task.status !== 'done') {
                   const d = new Date(task.deadline)
@@ -229,7 +225,12 @@ export function TaskListPanel({
                         <StatusDot status={task.status} />
                         <div className="min-w-0 flex-1 md:col-start-1">
                           <p className="truncate text-sm font-medium app-text">
-                            {task.title.trim() || 'Untitled task'}
+                            {listTitle}
+                            {rowUnsaved && (
+                              <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                                Unsaved
+                              </span>
+                            )}
                           </p>
                           <div className="mt-1 flex flex-wrap items-center gap-2 md:hidden">
                             <StatusChip status={task.status} />

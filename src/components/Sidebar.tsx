@@ -17,7 +17,6 @@ import { APP_NAME, APP_TAGLINE, projectColor } from '../lib/constants'
 import { countOpenTasksForAssignee } from '../lib/workspace'
 import type { Assignee, BrowseMode, Project, TaskItem } from '../types'
 import { cancelNotification } from '../services/notifications'
-import { db } from '../db'
 import { ProjectModal } from './ProjectModal'
 import { ThemeToggle } from './ThemeToggle'
 import { cn, GhostButton } from './ui'
@@ -81,7 +80,6 @@ export function Sidebar({
     const projectTasks = tasks.filter((t) => t.projectId === deleteTarget.id)
     for (const task of projectTasks) {
       cancelNotification(task.id)
-      await db.attachments.where('taskId').equals(task.id).delete()
     }
     await deleteProject(deleteTarget.id)
     setDeleteTarget(null)

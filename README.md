@@ -36,6 +36,16 @@ npm run dev
 
 The app loads as **admin** automatically (no login screen). Admins see **Insights** for team completion stats.
 
+Task **images** are stored in MySQL via the API (not only in the browser). Opening a task once migrates any legacy images from local IndexedDB to the server.
+
+### E2E smoke tests (Playwright, mocked API)
+
+```bash
+npm install
+npx playwright install chromium
+npm run test:e2e
+```
+
 ## Build for cPanel
 
 ```bash

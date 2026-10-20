@@ -5,11 +5,13 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8080',
-        changeOrigin: true,
-      },
-    },
+    proxy: process.env.E2E
+      ? undefined
+      : {
+          '/api': {
+            target: 'http://127.0.0.1:8080',
+            changeOrigin: true,
+          },
+        },
   },
 })
